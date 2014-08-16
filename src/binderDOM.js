@@ -22,7 +22,7 @@
         obj: {
           value: obj,
           applys: function (dom, template) {
-            
+            decoding(this.obj, dom)
           }
         },
         template: {
@@ -32,14 +32,10 @@
           value: dom,
           applys: function (obj, template) {
             encoding(template, obj, this.dom)
-          }
+          },
+          isDOM: true
         }
       })
-
-      watchDOM(dom).start().register(function () {
-        console.log('obj apply')
-        decoding(this.obj, this.dom)
-      }.bind(this))
     })
 
     function encoding(template, obj, dom) {

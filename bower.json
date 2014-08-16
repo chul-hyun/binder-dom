@@ -10,7 +10,8 @@
   ],
   "dependencies": {
     "binder": "*",
-	"watchDOM": "https://github.com/qkrcjfgus33/watchDOM.git"
+    "watchDOM": "https://github.com/qkrcjfgus33/watchDOM.git",
+    "loopjs": "*"
   },
   "devDependencies": {
     "qunit": "~1.14.0",

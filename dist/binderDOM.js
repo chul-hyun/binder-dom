@@ -903,343 +903,6 @@ define('method/$isBinder',['check'],function(check){
 
   return $isBinder
 });
-define('method/registProp',['loop', 'check', 'module/extend', 'module/clone', 'module/observeUtil', 'module/observe', 'method/$isBinder'],
-  function (loop, check, extend, clone, observeUtil, observe, $isBinder) {
-    observe.start()
-
-    var PropInfoDefault = { //속성 기본 구조.
-      'value': undefined,
-      'applyInfos': [],
-      'dependenceApplys': []
-    }
-    , PropOptionDefault = { //옵션 기본 구조.
-      'value': undefined,
-      'applys': [],
-      'private': false,
-      'isDOM':false
-    }
-    , ApplyInfoDefault = { //apply속성 기본 구조.
-      'apply': undefined,
-      'argNames': [],
-      'args': [],
-      'self': undefined
-    }
-
-    function registProp(inputOptions) {
-      var infos   = this.$$binderInfos 
-        , values  = this.$$values
-
-      //입력 옵션 초기화
-      loop(inputOptions, function (option, propName) {
-        inputOptions[propName] = initOption(option, propName)
-      })
-
-      //infos 초기화
-      loop(inputOptions, function (option, propName) {
-        initInfos(infos, propName)
-      })
-
-      //값(vlaue) 초기화.
-      loop(inputOptions, function (option, propName) {
-        var info = infos[propName]
-        if (info.value === undefined && option.value !== undefined) {
-          info.value = option.value
-        }
-      }, this)
-
-      loop(inputOptions, function (option, propName) {
-        var info = infos[propName]
-
-        // values객체 설정 및 private값에 따라 this[propName]값 설정.
-        observeUtil.connectObj(info, 'value', values, propName)
-        if (!option.private) {
-          observeUtil.connectObj(info, 'value', this, propName)
-        }
-
-        //applyInfos속성 설정
-        if (check.array(option.applys)){
-          loop(option.applys,function(apply, i){
-            info.applyInfos[i] = initApplyInfo.call(this, apply, info, values, propName)
-          }, this)
-        } else if (check.function(option.applys)){
-          info.applyInfos[0] = initApplyInfo.call(this, option.applys, info, values, propName)
-        }else{
-          throw new TypeError()
-        }
-        
-      }, this)
-
-      //dependenceApplys 속성 설정.
-      loop(inputOptions, function (option, propName) {
-        registDependenceApply.call(this, propName, infos)
-      }, this)
-
-      //값변경시 apply가 자동 실행되도록 등록.
-      loop(inputOptions, function (option, propName) {
-        var info = infos[propName]
-        observeApply.call(this, info, propName)
-      }, this)
-
-      //새로 등록된 속성들의 의존값이 설정 됬을시 $apply 실행.
-      loop(inputOptions, function (option, propName) {
-        loop(infos[propName].applyInfos, function (applyInfo) {
-          return loop(applyInfo.argNames, function (dependencePropName) {
-            if (values[dependencePropName] !== undefined) { //의존값이 설정됬을시
-              this.$apply(propName)
-              return false
-            }
-          }, this)
-        }, this)
-      }, this)
-    }
-
-    function initOption(option, propName) {
-      var temp = clone(PropOptionDefault)
-
-      if (check.object(option) && !$isBinder(option)) {
-        temp.value    = (option.value === undefined)  ? temp.value   : option.value
-        temp.applys   = (option.applys === undefined) ? temp.applys  : option.applys
-        temp.private  = (option.private === undefined)? temp.private : option.private
-        temp.isDOM    = (option.isDOM === undefined)  ? temp.isDOM   : option.isDOM
-      } else if(check.function(option)){
-        temp.applys.push(option)
-      } else {
-        temp.value = option
-      }
-
-      return temp
-    }
-
-    function initInfos(infos, propName) {
-      if (infos.hasOwnProperty(propName)) {
-        throw Error()
-      }
-      infos[propName] = extend({}, clone(PropInfoDefault), infos[propName])
-    }
-
-    function initApplyInfo(inputApply, info, values, propName) {
-      var tempApplyInfo, argNames, apply
-      
-      if (check.array(inputApply)) {
-        apply = inputApply.pop()
-        argNames = inputApply
-      } else if (check.function(inputApply)) {
-        apply = inputApply
-        argNames = getArgNames(apply)
-      } else {
-        throw new TypeError()
-      }
-
-      tempApplyInfo = clone(ApplyInfoDefault)
-      tempApplyInfo.apply = apply
-      tempApplyInfo.args = getPropNamesConnect(values, argNames)
-      tempApplyInfo.argNames = argNames
-      observeUtil.connectObj(values, propName, tempApplyInfo, 'self')
-
-      return tempApplyInfo
-    }
-
-    function getPropNamesConnect(values, propNames) {
-      var result = []
-        , i = 0
-      loop(propNames, function (propName) {
-        observeUtil.connectObj(values, propName, result, i++)
-      })
-      return result
-    }
-
-    function observeApply(info, propName) {
-      observeUtil.defineObserve(info, 'value', (function (propName) {
-        return function (newValue, oldValue, track) {
-          this.$old[track.join('.')] = oldValue
-          this.$dependenceApply(propName)
-        }
-      })(propName), this, true, [propName])
-    }
-
-    function registDependenceApply(propName, infos) {
-      var targetInfo, len
-      loop(infos[propName].applyInfos, function (applyInfo) {
-        loop(applyInfo.argNames, function (argName) {
-          targetInfo = infos[argName] = !!infos[argName] ? infos[argName] : {}
-          targetInfo.dependenceApplys = !!targetInfo.dependenceApplys ? targetInfo.dependenceApplys : []
-          len = targetInfo.dependenceApplys.length++
-          observeUtil.connectObj(infos, propName, targetInfo.dependenceApplys, len)
-        })
-      })
-    }
-
-    function getArgNames(fn) {
-      if (fn === undefined) {
-        return [];
-      }
-      var fnText = fn.toString().replace(/((\/\/.*$)|(\/\*[\s\S]*?\*\/))/mg, '')
-      var argDecl = fnText.match(/^function\s*[^\(]*\(\s*([^\)]*)\)/m)
-      var argStr = (argDecl[1]).replace(/\s/g, '')
-      if (argStr == '') {
-        return []
-      }
-
-      return argStr.split(',')
-    }
-
-    return registProp
-  });
-define('method/merge',['loop', 'check', 'module/observeUtil'],
-  function (loop, check, observeUtil) {
-    var MergeDefault = {
-      propName: undefined,
-      private: false
-    }
-
-    function merge(binderObj, options) {
-      option = initOption(binderObj, options)
-
-      var mergePropName
-      loop(option, function (prop, name) {
-        mergePropName = prop.propName
-        mergeDependenceApplys(binderObj.$$binderInfos[mergePropName], this.$$binderInfos[name])
-        observeUtil.connectObj(binderObj.$$binderInfos, mergePropName, this.$$binderInfos, name)
-        observeUtil.connectObj(binderObj.$$values, mergePropName, this.$$values, name)
-        if (!prop.private) {
-          observeUtil.connectObj(binderObj.$$values, mergePropName, this, name)
-        }
-      }, this)
-
-      loop(option, function (prop, name) {
-        this.$dependenceApply(name)
-      },this)
-    }
-
-    function mergeDependenceApplys(src, dest) {
-      if (!!dest && !!dest.dependenceApplys) {
-        Array.prototype.push.apply(src.dependenceApplys, dest.dependenceApplys)
-      }
-    }
-
-    function initOption(binderObj, options) {
-      var result = {}
-      if (check.object(options)) {
-        loop(options, function (option, name) {
-          result[name] = {
-            propName: (option.propName !== undefined) ? option.propName : option,
-            private: (option.private !== undefined) ? option.private : MergeDefault.private
-          }
-        })
-      } else if (check.array(options)) {
-        loop(options, function (name) {
-          result[name] = {
-            propName: name,
-            private: MergeDefault.private
-          }
-        })
-      } else {
-        loop(binderObj, function (p, name) {
-          if (name === '$$binderInfos' || name === '$$values' || name === '$old') {
-            return true
-          }
-          result[name] = {
-            propName: name,
-            private: MergeDefault.private
-          }
-        })
-      }
-      return result
-    }
-
-    return merge
-  });
-define('method/$regist',['loop', 'method/registProp', 'method/merge'],
-  function (loop, registProp, merge) {
-
-    function $regist() {
-      if (this.$isBinder(arguments[0])) {
-        merge.apply(this, arguments)
-      } else {
-        registProp.apply(this, arguments)
-      }
-    }
-
-    return $regist
-  });
-define('method/$dependenceApply',['loop', 'method/$$infoApply'], function (loop, $$infoApply) {
-  function $dependenceApply(propName) {
-    var info = this.$$binderInfos[propName]
-    loop(info.dependenceApplys, function (dependencePropInfo) {
-      $$infoApply.call(this, dependencePropInfo)
-    }, this)
-  }
-
-  return $dependenceApply
-});
-define('binder',['check', 'method/$apply', 'method/$regist', 'method/$isBinder', 'method/$dependenceApply', 'module/hideProp', 'module/clone'],
-  function (check, $apply, $regist, $isBinder, $dependenceApply, hideProp, clone) {
-    function binder(config) {
-      if (check.object(config)) {
-        var registConfig = clone(config)
-        config = function(){
-          this.$regist(registConfig)
-        }
-      }
-      
-      if(check.unfunction(config)) {
-        throw new TypeError();
-      }
-
-      function binderCreater() {
-        var self = Object.create(binder.prototype);
-
-        hideProp(self, '$$binderInfos', {})
-        hideProp(self, '$$values', Object.create(binder.prototype))
-        hideProp(self, '$old', {})
-        hideProp(self.$$values, '$old', self.$old)
-
-        config.apply(self, arguments)
-        return self;
-      }
-
-      return binderCreater;
-    }
-
-    binder.prototype = {
-      $apply            : $apply,
-      $regist           : $regist,
-      $isBinder         : $isBinder,
-      $dependenceApply  : $dependenceApply
-    }
-
-    return binder;
-  });
-
-define('module/tmpl',[],function(){
-  var cache = {};
-
-  function tmpl(str, data) {
-    // Figure out if we're getting a template, or if we need to
-    // load the template - and be sure to cache the result.
-    var fn = new Function("obj",
-        "var p=[],print=function(){p.push.apply(p,arguments);};" +
-
-        // Introduce the data as local variables using with(){}
-        "p.push('" +
-
-        // Convert the template into pure JavaScript
-        str
-          .replace(/[\r\t\n]/g, " ")
-          .split("<%").join("\t")
-          .replace(/((^|%>)[^\t]*)'/g, "$1\r")
-          .replace(/\t=(.*?)%>/g, "',obj\.$1,'")
-          .split("\t").join("');")
-          .split("%>").join("p.push('")
-          .split("\r").join("\\'")
-      + "');return p.join('');");
-
-    // Provide some basic currying to the user
-    return fn(data);
-  };
-
-  return tmpl
-});
 define('check',[],function () {
   function nulled(thing) {
     return thing === null
@@ -1754,6 +1417,355 @@ define('watchDOM',['check', 'loop', 'module/extend'], function (check, loop, ext
   return watchDOM
 });
 
+define('method/registProp',['loop', 'check', 'module/extend', 'module/clone', 'module/observeUtil', 'module/observe', 'method/$isBinder', 'watchDOM'],
+  function (loop, check, extend, clone, observeUtil, observe, $isBinder, watchDOM) {
+    observe.start()
+
+    var PropInfoDefault = { //속성 기본 구조.
+      'value': undefined,
+      'applyInfos': [],
+      'dependenceApplys': []
+    }
+    , PropOptionDefault = { //옵션 기본 구조.
+      'value': undefined,
+      'applys': [],
+      'private': false,
+      'isDOM':false
+    }
+    , ApplyInfoDefault = { //apply속성 기본 구조.
+      'apply': undefined,
+      'argNames': [],
+      'args': [],
+      'self': undefined
+    }
+
+    function registProp(inputOptions) {
+      var infos   = this.$$binderInfos 
+        , values  = this.$$values
+
+      //입력 옵션 초기화
+      loop(inputOptions, function (option, propName) {
+        inputOptions[propName] = initOption(option, propName)
+      })
+
+      //infos 초기화
+      loop(inputOptions, function (option, propName) {
+        initInfos(infos, propName)
+      })
+
+      //값(vlaue) 초기화.
+      loop(inputOptions, function (option, propName) {
+        var info = infos[propName]
+        if (info.value === undefined && option.value !== undefined) {
+          info.value = option.value
+        }
+      }, this)
+
+      loop(inputOptions, function (option, propName) {
+        var info = infos[propName]
+
+        // values객체 설정 및 private값에 따라 this[propName]값 설정.
+        observeUtil.connectObj(info, 'value', values, propName)
+        if (!option.private) {
+          observeUtil.connectObj(info, 'value', this, propName)
+        }
+
+        //applyInfos속성 설정
+        if (check.array(option.applys)){
+          loop(option.applys,function(apply, i){
+            info.applyInfos[i] = initApplyInfo.call(this, apply, info, values, propName)
+          }, this)
+        } else if (check.function(option.applys)){
+          info.applyInfos[0] = initApplyInfo.call(this, option.applys, info, values, propName)
+        }else{
+          throw new TypeError()
+        }
+        
+      }, this)
+
+      //dependenceApplys 속성 설정.
+      loop(inputOptions, function (option, propName) {
+        registDependenceApply.call(this, propName, infos)
+      }, this)
+
+      //값변경시 apply가 자동 실행되도록 등록.
+      loop(inputOptions, function (option, propName) {
+        var info = infos[propName]
+        if(option.isDOM){
+          observeApplyDOM.call(this, info, propName)
+        }else{
+          observeApply.call(this, info, propName)
+        }
+      }, this)
+
+      //새로 등록된 속성들의 의존값이 설정 됬을시 $apply 실행.
+      loop(inputOptions, function (option, propName) {
+        loop(infos[propName].applyInfos, function (applyInfo) {
+          return loop(applyInfo.argNames, function (dependencePropName) {
+            if (values[dependencePropName] !== undefined) { //의존값이 설정됬을시
+              this.$apply(propName)
+              return false
+            }
+          }, this)
+        }, this)
+      }, this)
+    }
+
+    function initOption(option, propName) {
+      var temp = clone(PropOptionDefault)
+
+      if (check.object(option) && !$isBinder(option)) {
+        temp.value    = (option.value === undefined)  ? temp.value   : option.value
+        temp.applys   = (option.applys === undefined) ? temp.applys  : option.applys
+        temp.private  = (option.private === undefined)? temp.private : option.private
+        temp.isDOM    = (option.isDOM === undefined)  ? temp.isDOM   : option.isDOM
+      } else if(check.function(option)){
+        temp.applys.push(option)
+      } else {
+        temp.value = option
+      }
+
+      return temp
+    }
+
+    function initInfos(infos, propName) {
+      if (infos.hasOwnProperty(propName)) {
+        throw Error()
+      }
+      infos[propName] = extend({}, clone(PropInfoDefault), infos[propName])
+    }
+
+    function initApplyInfo(inputApply, info, values, propName) {
+      var tempApplyInfo, argNames, apply
+      
+      if (check.array(inputApply)) {
+        apply = inputApply.pop()
+        argNames = inputApply
+      } else if (check.function(inputApply)) {
+        apply = inputApply
+        argNames = getArgNames(apply)
+      } else {
+        throw new TypeError()
+      }
+
+      tempApplyInfo = clone(ApplyInfoDefault)
+      tempApplyInfo.apply = apply
+      tempApplyInfo.args = getPropNamesConnect(values, argNames)
+      tempApplyInfo.argNames = argNames
+      observeUtil.connectObj(values, propName, tempApplyInfo, 'self')
+
+      return tempApplyInfo
+    }
+
+    function getPropNamesConnect(values, propNames) {
+      var result = []
+        , i = 0
+      loop(propNames, function (propName) {
+        observeUtil.connectObj(values, propName, result, i++)
+      })
+      return result
+    }
+
+    function observeApply(info, propName) {
+      observeUtil.defineObserve(info, 'value', (function (propName) {
+        return function (newValue, oldValue, track) {
+          this.$old[track.join('.')] = oldValue
+          this.$dependenceApply(propName)
+        }
+      })(propName), this, true, [propName])
+    }
+
+    function observeApplyDOM(info, propName) {
+      watchDOM(info.value).start().register((function (propName) {
+        return function () {
+          this.$dependenceApply(propName)
+        }.bind(this)
+      }.bind(this, propName))())
+    }
+
+    function registDependenceApply(propName, infos) {
+      var targetInfo, len
+      loop(infos[propName].applyInfos, function (applyInfo) {
+        loop(applyInfo.argNames, function (argName) {
+          targetInfo = infos[argName] = !!infos[argName] ? infos[argName] : {}
+          targetInfo.dependenceApplys = !!targetInfo.dependenceApplys ? targetInfo.dependenceApplys : []
+          len = targetInfo.dependenceApplys.length++
+          observeUtil.connectObj(infos, propName, targetInfo.dependenceApplys, len)
+        })
+      })
+    }
+
+    function getArgNames(fn) {
+      if (fn === undefined) {
+        return [];
+      }
+      var fnText = fn.toString().replace(/((\/\/.*$)|(\/\*[\s\S]*?\*\/))/mg, '')
+      var argDecl = fnText.match(/^function\s*[^\(]*\(\s*([^\)]*)\)/m)
+      var argStr = (argDecl[1]).replace(/\s/g, '')
+      if (argStr == '') {
+        return []
+      }
+
+      return argStr.split(',')
+    }
+
+    return registProp
+  });
+define('method/merge',['loop', 'check', 'module/observeUtil'],
+  function (loop, check, observeUtil) {
+    var MergeDefault = {
+      propName: undefined,
+      private: false
+    }
+
+    function merge(binderObj, options) {
+      option = initOption(binderObj, options)
+
+      var mergePropName
+      loop(option, function (prop, name) {
+        mergePropName = prop.propName
+        mergeDependenceApplys(binderObj.$$binderInfos[mergePropName], this.$$binderInfos[name])
+        observeUtil.connectObj(binderObj.$$binderInfos, mergePropName, this.$$binderInfos, name)
+        observeUtil.connectObj(binderObj.$$values, mergePropName, this.$$values, name)
+        if (!prop.private) {
+          observeUtil.connectObj(binderObj.$$values, mergePropName, this, name)
+        }
+      }, this)
+
+      loop(option, function (prop, name) {
+        this.$dependenceApply(name)
+      },this)
+    }
+
+    function mergeDependenceApplys(src, dest) {
+      if (!!dest && !!dest.dependenceApplys) {
+        Array.prototype.push.apply(src.dependenceApplys, dest.dependenceApplys)
+      }
+    }
+
+    function initOption(binderObj, options) {
+      var result = {}
+      if (check.object(options)) {
+        loop(options, function (option, name) {
+          result[name] = {
+            propName: (option.propName !== undefined) ? option.propName : option,
+            private: (option.private !== undefined) ? option.private : MergeDefault.private
+          }
+        })
+      } else if (check.array(options)) {
+        loop(options, function (name) {
+          result[name] = {
+            propName: name,
+            private: MergeDefault.private
+          }
+        })
+      } else {
+        loop(binderObj, function (p, name) {
+          if (name === '$$binderInfos' || name === '$$values' || name === '$old') {
+            return true
+          }
+          result[name] = {
+            propName: name,
+            private: MergeDefault.private
+          }
+        })
+      }
+      return result
+    }
+
+    return merge
+  });
+define('method/$regist',['loop', 'method/registProp', 'method/merge'],
+  function (loop, registProp, merge) {
+
+    function $regist() {
+      if (this.$isBinder(arguments[0])) {
+        merge.apply(this, arguments)
+      } else {
+        registProp.apply(this, arguments)
+      }
+    }
+
+    return $regist
+  });
+define('method/$dependenceApply',['loop', 'method/$$infoApply'], function (loop, $$infoApply) {
+  function $dependenceApply(propName) {
+    var info = this.$$binderInfos[propName]
+    loop(info.dependenceApplys, function (dependencePropInfo) {
+      $$infoApply.call(this, dependencePropInfo)
+    }, this)
+  }
+
+  return $dependenceApply
+});
+define('binder',['check', 'method/$apply', 'method/$regist', 'method/$isBinder', 'method/$dependenceApply', 'module/hideProp', 'module/clone'],
+  function (check, $apply, $regist, $isBinder, $dependenceApply, hideProp, clone) {
+    function binder(config) {
+      if (check.object(config)) {
+        var registConfig = clone(config)
+        config = function(){
+          this.$regist(registConfig)
+        }
+      }
+      
+      if(check.unfunction(config)) {
+        throw new TypeError();
+      }
+
+      function binderCreater() {
+        var self = Object.create(binder.prototype);
+
+        hideProp(self, '$$binderInfos', {})
+        hideProp(self, '$$values', Object.create(binder.prototype))
+        hideProp(self, '$old', {})
+        hideProp(self.$$values, '$old', self.$old)
+
+        config.apply(self, arguments)
+        return self;
+      }
+
+      return binderCreater;
+    }
+
+    binder.prototype = {
+      $apply            : $apply,
+      $regist           : $regist,
+      $isBinder         : $isBinder,
+      $dependenceApply  : $dependenceApply
+    }
+
+    return binder;
+  });
+
+define('module/tmpl',[],function(){
+  var cache = {};
+
+  function tmpl(str, data) {
+    // Figure out if we're getting a template, or if we need to
+    // load the template - and be sure to cache the result.
+    var fn = new Function("obj",
+        "var p=[],print=function(){p.push.apply(p,arguments);};" +
+
+        // Introduce the data as local variables using with(){}
+        "p.push('" +
+
+        // Convert the template into pure JavaScript
+        str
+          .replace(/[\r\t\n]/g, " ")
+          .split("<%").join("\t")
+          .replace(/((^|%>)[^\t]*)'/g, "$1\r")
+          .replace(/\t=(.*?)%>/g, "',obj\.$1,'")
+          .split("\t").join("');")
+          .split("%>").join("p.push('")
+          .split("\r").join("\\'")
+      + "');return p.join('');");
+
+    // Provide some basic currying to the user
+    return fn(data);
+  };
+
+  return tmpl
+});
 define('binderDOM',['binder', 'module/tmpl', 'watchDOM', 'loop'],
   function (binder, tmpl, watchDOM, loop) {
 
@@ -1778,7 +1790,7 @@ define('binderDOM',['binder', 'module/tmpl', 'watchDOM', 'loop'],
         obj: {
           value: obj,
           applys: function (dom, template) {
-            
+            decoding(this.obj, dom)
           }
         },
         template: {
@@ -1788,14 +1800,10 @@ define('binderDOM',['binder', 'module/tmpl', 'watchDOM', 'loop'],
           value: dom,
           applys: function (obj, template) {
             encoding(template, obj, this.dom)
-          }
+          },
+          isDOM: true
         }
       })
-
-      watchDOM(dom).start().register(function () {
-        console.log('obj apply')
-        decoding(this.obj, this.dom)
-      }.bind(this))
     })
 
     function encoding(template, obj, dom) {

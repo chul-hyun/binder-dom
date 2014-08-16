@@ -12,9 +12,8 @@ requirejs.config({
   paths: {
     'QUnit': '../bower_components/qunit/qunit/qunit',
     'text': '../bower_components/requirejs-text/text',
-    'binder': '../bower_components/binder/dist/binder',
     'binderDOM': '../dist/binderDOM',
-    'watchDOM': '../bower_components/watchDOM/dist/watchDOM'
+    'binder': '../bower_components/binder/dist/binder'
   },
 
   shim: {

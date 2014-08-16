@@ -23,6 +23,7 @@ module.exports = function (grunt) {
           out: "dist/binderDOM.js",
           optimize: "none",
           paths: {
+            'loop': '../bower_components/loopjs/dist/loop',
             'binder': '../bower_components/binder/dist/binder',
             'watchDOM': '../bower_components/watchDOM/dist/watchDOM'
           }
@@ -32,6 +33,7 @@ module.exports = function (grunt) {
         options: {
           out: "dist/binderDOM.min.js",
           paths: {
+            'loop': '../bower_components/loopjs/dist/loop.min',
             'binder': '../bower_components/binder/dist/binder.min',
             'watchDOM': '../bower_components/watchDOM/dist/watchDOM.min'
           }
