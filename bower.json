@@ -1,0 +1,20 @@
+{
+  "name": "binder-dom",
+  "version": "1.0.0",
+  "authors": [
+    "람츠 <82g74nx0bm69@naver.com>"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "test"
+  ],
+  "dependencies": {
+    "binder": "*",
+	"watchDOM": "https://github.com/qkrcjfgus33/watchDOM.git"
+  },
+  "devDependencies": {
+    "qunit": "~1.14.0",
+    "require-css": "~0.1.5",
+    "requirejs-text": "~2.0.12"
+  }
+}
